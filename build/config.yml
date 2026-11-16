@@ -10,7 +10,7 @@ info:
   description: "Events and TOHO Cinemas showtimes around Osaka, in the system tray"
   copyright: "(c) 2026 Ian Ledig"
   comments: "https://github.com/ian-ledig/osaka-now"
-  version: "2.0.0"
+  version: "2.0.1"
 
 # `wails3 dev`: rebuild and restart when Go files change, hot-reload the frontend.
 dev_mode:

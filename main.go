@@ -24,7 +24,7 @@ var assets embed.FS
 //go:embed build/appicon.png
 var icon []byte
 
-const version = "2.0.0" // keep in step with build/config.yml
+const version = "2.0.1" // keep in step with build/config.yml
 
 func main() {
 	if slices.Contains(os.Args, "--version") {
