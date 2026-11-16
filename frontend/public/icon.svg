@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Osaka Now</title>
+  <!-- Osaka Castle's main tower on a red disc. build/appicon.png is a 1024px render of this file. -->
+  <circle cx="512" cy="512" r="480" fill="#de3640"/>
+  <g transform="translate(512 516) scale(1.2) translate(-512 -531)">
+    <g fill="#fff">
+      <path d="M512 262 664 366q-24 8-52 8H412q-28 0-52-8z"/>
+      <rect x="432" y="374" width="160" height="52"/>
+      <path d="M376 426h272l68 56q-26 10-62 10H370q-36 0-62-10z"/>
+      <rect x="392" y="492" width="240" height="56"/>
+      <path d="M336 548h352l84 62q-30 12-72 12H324q-42 0-72-12z"/>
+      <rect x="352" y="622" width="320" height="62"/>
+      <path d="M330 684h364l48 116H282z"/>
+    </g>
+    <g fill="#de3640">
+      <rect x="496" y="388" width="32" height="38" rx="4"/>
+      <rect x="446" y="508" width="30" height="40" rx="4"/>
+      <rect x="548" y="508" width="30" height="40" rx="4"/>
+      <rect x="418" y="640" width="30" height="44" rx="4"/>
+      <rect x="497" y="640" width="30" height="44" rx="4"/>
+      <rect x="576" y="640" width="30" height="44" rx="4"/>
+    </g>
+  </g>
+</svg>

@@ -39,7 +39,7 @@ go test ./internal/...   # run the tests
 | `internal/thumb` | Downloads, trims and shrinks the pictures |
 | `internal/store` | The cache on disk |
 | `frontend/` | The page shown in the window: plain TypeScript and CSS, no framework |
-| `build/` | Wails build files for each system (icons, manifests, packaging) |
+| `build/` | Wails build files for each system (icons, manifests, packaging). `appicon.png` is a 1024 px render of `frontend/public/icon.svg` |
 
 ## A few rules
 

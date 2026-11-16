@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/icon.png" width="96" alt="Osaka Now icon">
+<img src="frontend/public/icon.svg" width="96" alt="Osaka Now logo: Osaka Castle on a red disc">
 
 # Osaka Now
 

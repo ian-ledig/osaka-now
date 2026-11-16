@@ -74,11 +74,9 @@ h1 {
   font-weight: 600;
 }
 
-.dot {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--accent);
+.logo {
+  width: 22px;
+  height: 22px;
 }
 
 #status {
