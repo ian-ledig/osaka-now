@@ -1,4 +1,5 @@
-// Osaka & Sakai events tray app. Build: build.cmd (C# 5 / .NET Framework 4.x, no dependencies).
+// Osaka Now: events and TOHO Cinemas showtimes around Osaka, in the Windows system tray.
+// Build: build.cmd (C# 5 / .NET Framework 4.x, no dependencies). Checks: OsakaNow.exe --selftest
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -17,6 +18,11 @@ using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
+
+[assembly: System.Reflection.AssemblyTitle("Osaka Now")]
+[assembly: System.Reflection.AssemblyProduct("Osaka Now")]
+[assembly: System.Reflection.AssemblyDescription("Events and TOHO Cinemas showtimes around Osaka, in the system tray")]
+[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
 
 // One row of the list: an event, a movie, a showtime or a plain message.
 public class Ev
@@ -159,7 +165,7 @@ static class Core
             e.Pill = days <= 7 ? 0 : 2;
             e.Score = s.Ticks;
         }
-        return list.OrderByDescending(e => e.Score).Take(MaxShown).ToList(); // stable sort
+        return list.OrderByDescending(e => e.Score).Take(MaxShown).ToList();
     }
 
     static string Str(Dictionary<string, object> d, string key)
@@ -346,10 +352,10 @@ static class Core
     {
         var rows = new List<Ev>();
         string closed = string.CompareOrdinal(day, DateTime.Today.ToString("yyyyMMdd")) > 0 ? "Not on sale yet" : "Sales closed";
-        foreach (var m in Kids(Json(json), "data"))          // the film and its variants (subtitled, IMAX...)
-            foreach (var th in Kids(m, "list"))              // theater
-                foreach (var dd in Kids(th, "list"))         // day
-                    foreach (var s in Kids(dd, "list"))      // showing
+        foreach (var m in Kids(Json(json), "data")) // film variants (subtitled, IMAX...), then theater, day, showing
+            foreach (var th in Kids(m, "list"))
+                foreach (var dd in Kids(th, "list"))
+                    foreach (var s in Kids(dd, "list"))
                     {
                         var scr = Kid(s, "screen");
                         string st = Str(Kid(s, "unsoldSeatInfo"), "unsoldSeatStatus");
@@ -495,8 +501,8 @@ class FlatList : ListBox
 
 class App : ApplicationContext
 {
-    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run", RunName = "OsakaEvents";
-    static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OsakaEvents");
+    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run", RunName = "OsakaNow";
+    static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OsakaNow");
     static readonly string CachePath = Path.Combine(DataDir, "cache.json"), ThumbDir = Path.Combine(DataDir, "thumbs");
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     static readonly Color Red = Color.FromArgb(201, 59, 50), Green = Color.FromArgb(27, 127, 76), Gray = Color.FromArgb(104, 104, 104); // all >= 4.5:1 under white text
@@ -560,7 +566,7 @@ class App : ApplicationContext
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             int d = head.Height / 2, x = pad * 2, y = pad * 3 / 2;
             using (var b = new SolidBrush(Red)) e.Graphics.FillEllipse(b, x, y + (head.Height - d) / 2, d, d);
-            TextRenderer.DrawText(e.Graphics, "Osaka & Sakai", head, new Point(x + d + pad, y), fg, Tf);
+            TextRenderer.DrawText(e.Graphics, "Osaka Now", head, new Point(x + d + pad, y), fg, Tf);
             TextRenderer.DrawText(e.Graphics, subtitle, font, new Point(x, y + head.Height + pad / 4), dim, Tf);
         };
         var tabRow = Row(header, chipH);
@@ -726,9 +732,9 @@ class App : ApplicationContext
         popup.ForeColor = fg;
         back.FlatAppearance.MouseOverBackColor = back.FlatAppearance.MouseDownBackColor = hover;
         foreach (var rb in All(popup).OfType<RadioButton>()) Tint(rb);
-        SetWindowTheme(list.Handle, dark ? "DarkMode_Explorer" : "Explorer", null); // matching scrollbar
+        SetWindowTheme(list.Handle, dark ? "DarkMode_Explorer" : "Explorer", null);
         int v = dark ? 1 : 0;
-        DwmSetWindowAttribute(popup.Handle, 20, ref v, 4); // matching window border
+        DwmSetWindowAttribute(popup.Handle, 20, ref v, 4);
     }
 
     static GraphicsPath Round(Rectangle r, int rad)
@@ -751,7 +757,7 @@ class App : ApplicationContext
             using (var b = new SolidBrush(hover))
             using (var p = Round(Rectangle.Inflate(r, -pad, -pad / 4), pad)) g.FillPath(b, p);
 
-        var tr = new Rectangle(r.X + pad * 2, r.Y + pad, ev.Slim ? 0 : thumbW, r.Height - pad * 2); // picture column
+        var tr = new Rectangle(r.X + pad * 2, r.Y + pad, ev.Slim ? 0 : thumbW, r.Height - pad * 2);
         if (!ev.Slim)
             using (var p = Round(tr, pad * 3 / 4))
             {
@@ -795,7 +801,7 @@ class App : ApplicationContext
         bool evDue = force || (DateTime.Now - fetched).TotalHours >= Core.RefreshHours;
         if (busy || !(evDue || movies.Count == 0)) return; // movies.Count == 0: first run after an update, or TOHO failed last time
         busy = true;
-        tray.Text = "Osaka events: updating…";
+        tray.Text = "Osaka Now: updating…";
         subtitle = "Updating…";
         header.Invalidate();
         Task.Run(() =>
@@ -833,8 +839,8 @@ class App : ApplicationContext
     void Caption()
     {
         string when = fetched == DateTime.MinValue ? "no data yet" : "updated " + fetched.ToString("ddd HH:mm", Inv);
-        tray.Text = "Osaka and Sakai events (" + when + ")";
-        popup.Text = "Osaka and Sakai: coming up"; // for screen readers; the visible title is painted in the header
+        tray.Text = "Osaka Now (" + when + ")";
+        popup.Text = "Osaka Now"; // for screen readers; the visible title is painted in the header
         subtitle = (tab == 0 ? "Coming up for two" : "Now at TOHO Cinemas, newest first") + "  ·  " + when;
         header.Invalidate();
     }
@@ -933,7 +939,7 @@ class App : ApplicationContext
         ApplyTheme();
         UpdateUi();
         var wa = Screen.FromPoint(Cursor.Position).WorkingArea;
-        popup.Height = wa.Height - 16; // almost the full screen height
+        popup.Height = wa.Height - 16;
         popup.Location = new Point(wa.Right - popup.Width - 8, wa.Bottom - popup.Height - 8);
         popup.Show();
         popup.Activate();
@@ -944,7 +950,7 @@ class App : ApplicationContext
     {
         var ev = list.SelectedItem as Ev;
         if (ev == null) return;
-        if (showing == null && !string.IsNullOrEmpty(ev.Code)) ShowTimes(ev); // a movie: show its times here
+        if (showing == null && !string.IsNullOrEmpty(ev.Code)) ShowTimes(ev);
         else if (Core.SafeUrl(ev.Url)) Process.Start(ev.Url); // scraped data: only ever hand http(s) to the shell
     }
 
@@ -981,7 +987,7 @@ class App : ApplicationContext
             return 0;
         }
         bool first;
-        using (new Mutex(true, "OsakaEvents.SingleInstance", out first))
+        using (new Mutex(true, "OsakaNow.SingleInstance", out first))
         {
             if (!first) return 0;
             SetProcessDPIAware();
