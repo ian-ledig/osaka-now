@@ -5,35 +5,140 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+  # Run by hand to also start the app on macOS and Linux and get a screenshot of each.
+  workflow_dispatch:
+    inputs:
+      screenshots:
+        description: Attach a screenshot of the running app (fetches live data)
+        type: boolean
+        default: true
 
 permissions:
-  contents: write # only used by the release step; pull requests from forks stay read-only
+  contents: read
+
+env:
+  WAILS_VERSION: v3.1.0
 
 jobs:
   build:
-    runs-on: windows-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest }
+          - { name: macOS, os: macos-latest }
+          - { name: Linux, os: ubuntu-24.04 }
     steps:
       - uses: actions/checkout@v7
 
-      - name: Build
-        shell: cmd
-        run: call build.cmd
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
 
-      - name: Self-test
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install GTK and WebKit (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Test
+        run: go test ./internal/...
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $p = Start-Process .\OsakaNow.exe -ArgumentList '--selftest' -Wait -PassThru -RedirectStandardOutput out.txt -RedirectStandardError err.txt
-          Get-Content out.txt, err.txt
-          exit $p.ExitCode
+          wails3 build
+          Copy-Item bin/OsakaNow.exe OsakaNow-windows-x64.exe
+
+      - name: Build (macOS, Intel and Apple silicon in one app)
+        if: runner.os == 'macOS'
+        run: |
+          wails3 task darwin:package:universal
+          ditto -c -k --keepParent bin/OsakaNow.app OsakaNow-macos-universal.zip
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          wails3 build
+          wails3 task linux:create:appimage
+          wails3 task linux:create:deb
+          wails3 task linux:create:rpm
+          ls -la bin
+          tar -C bin -czf OsakaNow-linux-x64.tar.gz OsakaNow
+          mv bin/*.AppImage OsakaNow-linux-x64.AppImage
+          mv bin/*.deb OsakaNow-linux-x64.deb
+          mv bin/*.rpm OsakaNow-linux-x64.rpm
+
+      - name: Check that the binary starts
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) ./bin/OsakaNow.exe --version | tee version.txt ;;
+            macOS)   ./bin/OsakaNow.app/Contents/MacOS/OsakaNow --version | tee version.txt ;;
+            Linux)   ./bin/OsakaNow --version | tee version.txt ;;
+          esac
+          grep -q '^[0-9]' version.txt
+
+      - name: Screenshot (Linux)
+        if: runner.os == 'Linux' && inputs.screenshots
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y xvfb imagemagick dbus-x11 fonts-noto-cjk > /dev/null
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 # the runner blocks the sandbox WebKit starts its web process in
+          export GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
+          xvfb-run -a -s "-screen 0 1100x900x24" dbus-launch --exit-with-session bash -c '
+            ./bin/OsakaNow --show > app.log 2>&1 &
+            sleep 100
+            import -window root shot-linux.png
+            kill %1 || true'
+          head -c 6000 app.log || true
+
+      - name: Screenshot (macOS)
+        if: runner.os == 'macOS' && inputs.screenshots
+        continue-on-error: true
+        run: |
+          ./bin/OsakaNow.app/Contents/MacOS/OsakaNow --show > app.log 2>&1 &
+          sleep 100
+          screencapture -x shot-macos.png
+          kill %1 || true
+          head -c 6000 app.log || true
 
       - uses: actions/upload-artifact@v7
         with:
-          name: OsakaNow
-          path: OsakaNow.exe
+          name: OsakaNow-${{ matrix.name }}
+          path: |
+            OsakaNow-*
+            shot-*.png
+          if-no-files-found: error
 
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME OsakaNow.exe --title "Osaka Now $($env:GITHUB_REF_NAME.TrimStart('v'))" --generate-notes
+        run: |
+          cd dist
+          rm -f shot-*.png
+          sha256sum OsakaNow-* > SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" OsakaNow-* SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --title "Osaka Now ${GITHUB_REF_NAME#v}" --generate-notes
