@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=Osaka Now
+Comment=Events and TOHO Cinemas showtimes around Osaka, in the system tray
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/OsakaNow %u
+Terminal=false
+Type=Application
+Icon=OsakaNow
+Categories=Utility;
+StartupWMClass=OsakaNow
+
+ 

@@ -1,0 +1,41 @@
+# Project configuration for Wails.
+# After changing `info`, run `wails3 task common:update:build-assets` to regenerate
+# the files under build/windows, build/darwin and build/linux.
+version: '3'
+
+info:
+  companyName: "Ian Ledig"
+  productName: "Osaka Now"
+  productIdentifier: "io.github.ian-ledig.osaka-now"
+  description: "Events and TOHO Cinemas showtimes around Osaka, in the system tray"
+  copyright: "(c) 2026 Ian Ledig"
+  comments: "https://github.com/ian-ledig/osaka-now"
+  version: "2.0.0"
+
+# `wails3 dev`: rebuild and restart when Go files change, hot-reload the frontend.
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+      - "*_test.go"
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: wails3 build DEV=true
+      type: blocking
+    - cmd: wails3 task common:dev:frontend
+      type: background
+    - cmd: wails3 task run
+      type: primary
+      exit_policy: shutdown

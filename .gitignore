@@ -1,3 +1,14 @@
-# Build output (run build.cmd, or download a release)
-*.exe
-*.pdb
+# Build output
+bin/
+frontend/dist/
+*.syso
+
+# Generated or downloaded on build
+frontend/node_modules/
+frontend/bindings/
+.task/
+.wails/
+build/linux/appimage/build/
+build/linux/*.desktop
+
+.DS_Store

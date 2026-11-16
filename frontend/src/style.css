@@ -1,0 +1,276 @@
+:root {
+  --panel: #f9f9f9;
+  --hover: #eaeaea;
+  --ink: #1a1a1a;
+  --dim: #5c5c5c;
+  --blank: #dedede;
+  --accent: #c93b32;
+  /* Badge colours: all readable under white text. */
+  --red: #c93b32;
+  --green: #1b7f4c;
+  --grey: #686868;
+}
+
+/* The window follows the system's light or dark setting. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --panel: #202020;
+    --hover: #333333;
+    --ink: #ffffff;
+    --dim: #aaaaaa;
+    --blank: #3a3a3a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  color: var(--ink);
+  font: 13px/1.35 "Segoe UI", system-ui, -apple-system, "Yu Gothic UI", "Hiragino Sans", "Noto Sans CJK JP", sans-serif;
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Title, status line, tabs */
+
+header {
+  padding: 12px 16px 0;
+}
+
+h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+#status {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+nav,
+#theaters,
+#days {
+  display: flex;
+  margin-left: -8px;
+}
+
+nav {
+  margin-top: 4px;
+}
+
+/* Tabs, theaters and days: text with an underline when chosen. */
+.chip {
+  position: relative;
+  padding: 6px 8px 11px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.chip:hover {
+  background: var(--hover);
+}
+
+.chip[aria-selected="true"],
+.chip[aria-checked="true"] {
+  color: var(--ink);
+}
+
+.chip[aria-selected="true"]::after,
+.chip[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* Showtimes bar */
+
+#bar {
+  padding: 2px 16px 0;
+}
+
+.film {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: -8px;
+}
+
+#back {
+  flex: none;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+#back:hover {
+  background: var(--hover);
+}
+
+h2 {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Lists */
+
+main {
+  flex: 1;
+  min-height: 0;
+}
+
+ul {
+  height: 100%;
+  padding: 4px 8px 8px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+ul::-webkit-scrollbar {
+  width: 10px;
+}
+
+ul::-webkit-scrollbar-thumb {
+  border: 3px solid var(--panel);
+  border-radius: 5px;
+  background: var(--grey);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--hover);
+}
+
+.row:disabled {
+  cursor: default;
+}
+
+.pic {
+  flex: none;
+  width: 112px;
+  height: 80px;
+  border-radius: 6px;
+  background: var(--blank);
+  overflow: hidden;
+}
+
+.pic img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.name {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pill {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--grey);
+}
+
+.pill.red {
+  background: var(--red);
+}
+
+.pill.green {
+  background: var(--green);
+}
+
+.tag,
+.place {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.message {
+  padding: 16px 8px;
+  color: var(--dim);
+}

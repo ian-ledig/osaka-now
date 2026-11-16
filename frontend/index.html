@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Everything comes from the app itself. Text from the web is only ever inserted as text. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'">
+  <meta name="color-scheme" content="light dark">
+  <title>Osaka Now</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <header>
+    <h1><span class="dot"></span>Osaka Now</h1>
+    <p id="status" aria-live="polite"></p>
+    <nav role="tablist" aria-label="Lists">
+      <button class="chip" role="tab" id="tab-events" aria-selected="true">Events</button>
+      <button class="chip" role="tab" id="tab-movies" aria-selected="false">Movies</button>
+    </nav>
+  </header>
+
+  <!-- Only while a film's showtimes are open. -->
+  <section id="bar" hidden>
+    <div class="film">
+      <button id="back" aria-label="Back to the movie list">←&nbsp; Back</button>
+      <h2 id="film"></h2>
+    </div>
+    <div id="theaters" role="radiogroup" aria-label="Theater"></div>
+    <div id="days" role="radiogroup" aria-label="Day"></div>
+  </section>
+
+  <main>
+    <ul id="events"></ul>
+    <ul id="movies" hidden></ul>
+    <ul id="times" hidden></ul>
+  </main>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
