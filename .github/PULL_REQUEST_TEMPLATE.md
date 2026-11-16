@@ -1,5 +1,6 @@
 What does this change, and why?
 
 
-- [ ] `build.cmd` and `OsakaNow.exe --selftest` pass
+- [ ] `go test ./internal/...` passes
+- [ ] Tried it with `wails3 dev` (which system?)
 - [ ] Screenshot attached if the window looks different
