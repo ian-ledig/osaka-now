@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -18,8 +20,8 @@ using Microsoft.Win32;
 
 public class Ev
 {
-    public string Name, Start, End, Place, Url, Desc;
-    public int Pop;      // bonus from source ranking / appearing in several lists
+    public string Name, Start, End, Place, Url, Desc, Img;
+    public int Pop;     // bonus from source ranking / appearing in several lists
     public bool Sakai;
     [ScriptIgnore] public double Score;
     [ScriptIgnore] public string Tag, When1, When2;
@@ -141,7 +143,7 @@ static class Core
                 list.Add(new Ev
                 {
                     Name = Str(d, "name"), Start = Str(d, "startDate"), End = Str(d, "endDate"), Place = place,
-                    Url = Str(d, "url"), Desc = Str(d, "description"), Pop = pop, Sakai = sakai || place.Contains("堺")
+                    Url = Str(d, "url"), Desc = Str(d, "description"), Img = Str(d, "image"), Pop = pop, Sakai = sakai || place.Contains("堺")
                 });
             }
         }
@@ -163,26 +165,87 @@ static class Core
             });
             if (dup == null) { all.Add(e); continue; }
             dup.Pop = Math.Min(15, Math.Max(dup.Pop, e.Pop) + 3); // listed several times = more notable
+            if (e.Sakai && !dup.Sakai) dup.Place = e.Place; // the Sakai listing names the city
             dup.Sakai |= e.Sakai;
         }
     }
 
-    static string Get(string url)
+    static byte[] GetBytes(string url, out string charset)
     {
         var req = (HttpWebRequest)WebRequest.Create(url);
         req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
         req.Timeout = 20000;
         req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
         using (var resp = (HttpWebResponse)req.GetResponse())
+        using (var s = resp.GetResponseStream())
         using (var ms = new MemoryStream())
         {
-            resp.GetResponseStream().CopyTo(ms);
-            string cs = resp.CharacterSet ?? "";
-            Encoding enc;
-            try { enc = cs.ToLowerInvariant().Contains("31j") ? Encoding.GetEncoding(932) : Encoding.GetEncoding(cs); } // jalan says Windows-31J
-            catch { enc = Encoding.UTF8; }
-            return enc.GetString(ms.ToArray());
+            var buf = new byte[81920];
+            for (int n; (n = s.Read(buf, 0, buf.Length)) > 0; )
+            {
+                ms.Write(buf, 0, n);
+                if (ms.Length > 8 << 20) throw new IOException("response too large: " + url);
+            }
+            charset = resp.CharacterSet ?? "";
+            return ms.ToArray();
         }
+    }
+
+    static string Get(string url)
+    {
+        string cs;
+        byte[] data = GetBytes(url, out cs);
+        Encoding enc;
+        try { enc = cs.ToLowerInvariant().Contains("31j") ? Encoding.GetEncoding(932) : Encoding.GetEncoding(cs); } // jalan says Windows-31J
+        catch { enc = Encoding.UTF8; }
+        return enc.GetString(data);
+    }
+
+    // Image URLs come from scraped pages: only fetch http(s) from the two sites' own hosts.
+    public static bool ImageOk(string url)
+    {
+        if (!SafeUrl(url)) return false;
+        string h = new Uri(url).Host;
+        return new[] { "walkerplus.com", "jalan.net" }.Any(d => h == d || h.EndsWith("." + d));
+    }
+
+    // Returns a w x h centre-cropped thumbnail, from the disk cache when possible. Throws on any failure.
+    public static Bitmap LoadThumb(string url, string dir, int w, int h)
+    {
+        string file;
+        using (var md5 = System.Security.Cryptography.MD5.Create()) // just a file name, not security
+            file = Path.Combine(dir, BitConverter.ToString(md5.ComputeHash(Encoding.UTF8.GetBytes(url))).Replace("-", "") + ".jpg");
+        bool cached = File.Exists(file);
+        try
+        {
+            byte[] data;
+            if (cached) data = File.ReadAllBytes(file);
+            else { string cs; data = GetBytes(url, out cs); Thread.Sleep(150); } // be polite to the sites
+            using (var ms = new MemoryStream(data))
+            using (var src = new Bitmap(ms))
+            {
+                // The sites letterbox photos with white bars: trim them (16 samples per line is enough to tell).
+                Func<int, int, bool> white = (x, y) => { var c = src.GetPixel(x, y); return c.R > 240 && c.G > 240 && c.B > 240; };
+                Func<int, bool> row = y => Enumerable.Range(0, 16).All(i => white(i * (src.Width - 1) / 15, y));
+                Func<int, bool> col = x => Enumerable.Range(0, 16).All(i => white(x, i * (src.Height - 1) / 15));
+                int l = 0, top = 0, r = src.Width, bot = src.Height;
+                while (bot - top > 16 && row(top)) top++;
+                while (bot - top > 16 && row(bot - 1)) bot--;
+                while (r - l > 16 && col(l)) l++;
+                while (r - l > 16 && col(r - 1)) r--;
+
+                var t = new Bitmap(w, h);
+                using (var g = Graphics.FromImage(t))
+                {
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    float k = Math.Max((float)w / (r - l), (float)h / (bot - top)), sw = w / k, sh = h / k;
+                    g.DrawImage(src, new RectangleF(0, 0, w, h), new RectangleF(l + (r - l - sw) / 2, top + (bot - top - sh) / 2, sw, sh), GraphicsUnit.Pixel);
+                }
+                if (!cached) { Directory.CreateDirectory(dir); t.Save(file, ImageFormat.Jpeg); } // cache the small thumb, not the original
+                return t;
+            }
+        }
+        catch { if (cached) File.Delete(file); throw; } // a corrupt cache file is re-downloaded next time
     }
 
     public static List<Ev> FetchAll(Action<string> log)
@@ -225,63 +288,127 @@ static class Core
             "\"name\":\"大阪・光の饗宴「御堂筋イルミネーション」\",\"startDate\":\"2026-11-21\"}</script>", 0, false));
         ok(all.Count == 1 && all[0].Pop == 3, "dedupe");
         ok(SafeUrl("https://a.jp/x") && !SafeUrl("file:///c:/x.exe") && !SafeUrl("javascript:1") && !SafeUrl("calc.exe"), "url check");
+        ok(ImageOk("https://ms-cache.walkerplus.com/a.jpg") && ImageOk("https://www.jalan.net/a.jpg") && !ImageOk("https://evil-jalan.net/a.jpg")
+            && !ImageOk("http://192.168.0.1/a.jpg") && !ImageOk("") && !ImageOk(null), "image host check");
         Console.WriteLine("selftest ok");
         return 0;
     }
 }
 
+class Flyout : Form
+{
+    protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x80; return p; } } // tool window: not in Alt+Tab
+}
+
 class App : ApplicationContext
 {
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run", RunName = "OsakaEvents";
-    static readonly string CachePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OsakaEvents", "cache.json");
+    static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OsakaEvents");
+    static readonly string CachePath = Path.Combine(DataDir, "cache.json"), ThumbDir = Path.Combine(DataDir, "thumbs");
+    readonly Dictionary<string, Bitmap> thumbs = new Dictionary<string, Bitmap>(); // by image url; null = failed, don't retry this run
+    int thumbW, thumbH;
+    bool loadingThumbs;
 
     readonly NotifyIcon tray = new NotifyIcon();
-    readonly Form popup = new Form();
+    readonly Form popup = new Flyout();
+    readonly Panel header = new Panel();
     readonly ListBox list = new ListBox();
     readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
     List<Ev> events = new List<Ev>();
     DateTime fetched = DateTime.MinValue, hiddenAt;
     bool busy;
+    string subtitle = "";
+    Color bg, hover, fg, dim, fgSel, dimSel; // set by ApplyTheme
+    static readonly Color Red = Color.FromArgb(201, 59, 50), Green = Color.FromArgb(27, 127, 76); // both >= 4.5:1 under white text
 
     public App()
     {
-        Font font = SystemFonts.MessageBoxFont, bold = new Font(font, FontStyle.Bold);
+        // Yu Gothic UI ships with Windows 10/11 and covers both Latin and Japanese.
+        Font font = new Font("Yu Gothic UI", 9f), small = new Font("Yu Gothic UI Semibold", 8.25f),
+             title = new Font("Yu Gothic UI Semibold", 10.5f), head = new Font("Yu Gothic UI Semibold", 14f);
         int pad;
         using (var g = popup.CreateGraphics()) pad = (int)(8 * g.DpiX / 96);
+        var tf = TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
+
+        header.Dock = DockStyle.Top;
+        header.Height = pad * 3 + head.Height + font.Height;
+        header.Paint += (s, e) =>
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            int d = head.Height / 2, x = pad * 2, y = pad * 3 / 2;
+            using (var b = new SolidBrush(Red)) e.Graphics.FillEllipse(b, x, y + (head.Height - d) / 2, d, d);
+            TextRenderer.DrawText(e.Graphics, "Osaka & Sakai", head, new Point(x + d + pad, y), fg, tf);
+            TextRenderer.DrawText(e.Graphics, subtitle, font, new Point(x, y + head.Height + pad / 4), dim, tf);
+        };
 
         list.Dock = DockStyle.Fill;
         list.BorderStyle = BorderStyle.None;
         list.IntegralHeight = false;
         list.DrawMode = DrawMode.OwnerDrawFixed;
-        list.ItemHeight = bold.Height + font.Height + pad * 5 / 2;
+        thumbW = pad * 14; thumbH = pad * 10;
+        list.ItemHeight = thumbH + pad * 2;
         list.DrawItem += (s, e) =>
         {
             if (e.Index < 0) return;
             var ev = (Ev)list.Items[e.Index];
-            e.DrawBackground();
-            bool sel = (e.State & DrawItemState.Selected) != 0;
-            Color fg = sel ? SystemColors.HighlightText : SystemColors.WindowText, dim = sel ? SystemColors.HighlightText : SystemColors.GrayText;
-            var f = TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
-            int x = e.Bounds.X + pad, dw = pad * 8, y1 = e.Bounds.Y + pad, y2 = y1 + bold.Height + pad / 2;
-            int x2 = x + dw + pad, w2 = e.Bounds.Right - x2 - pad;
-            TextRenderer.DrawText(e.Graphics, ev.When1, bold, new Rectangle(x, y1, dw, bold.Height), fg, f);
-            TextRenderer.DrawText(e.Graphics, ev.When2, font, new Rectangle(x, y2, dw, font.Height), dim, f);
-            TextRenderer.DrawText(e.Graphics, ev.Name, bold, new Rectangle(x2, y1, w2, bold.Height), fg, f);
-            TextRenderer.DrawText(e.Graphics, (ev.Tag == "" ? "" : ev.Tag + " · ") + ev.Place, font, new Rectangle(x2, y2, w2, font.Height), dim, f);
+            var g = e.Graphics;
+            var r = e.Bounds;
+            bool sel = (e.State & DrawItemState.Selected) != 0; // hovered or keyboard-selected row
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var b = new SolidBrush(bg)) g.FillRectangle(b, r);
+            if (sel)
+                using (var b = new SolidBrush(hover))
+                using (var p = Round(Rectangle.Inflate(r, -pad, -pad / 4), pad)) g.FillPath(b, p);
+
+            var tr = new Rectangle(r.X + pad * 2, r.Y + pad, thumbW, thumbH);
+            Bitmap img;
+            using (var p = Round(tr, pad * 3 / 4))
+            {
+                if (ev.Img != null && thumbs.TryGetValue(ev.Img, out img) && img != null)
+                {
+                    using (var tb = new TextureBrush(img, WrapMode.TileFlipXY)) // brush fill = antialiased rounded corners
+                    {
+                        tb.TranslateTransform(tr.X, tr.Y);
+                        tb.ScaleTransform((float)tr.Width / img.Width, (float)tr.Height / img.Height);
+                        g.FillPath(tb, p);
+                    }
+                }
+                else using (var b = new SolidBrush(sel ? bg : hover)) g.FillPath(b, p); // no picture (yet): keep the rows aligned
+            }
+
+            Color cf = sel ? fgSel : fg, cd = sel ? dimSel : dim;
+            int x = tr.Right + pad * 3 / 2, w = r.Right - x - pad * 2, gap = pad / 2, pillH = small.Height + pad / 2;
+            var wrap = tf | TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl; // title: up to two lines, then ellipsis
+            int th = Math.Min(TextRenderer.MeasureText(g, ev.Name, title, new Size(w, 9999), wrap).Height, title.Height * 2);
+            int y = tr.Y + (tr.Height - th - pillH - font.Height - gap * 2) / 2;
+            TextRenderer.DrawText(g, ev.Name, title, new Rectangle(x, y, w, th), cf, wrap);
+            y += th + gap;
+            string when = ev.When1 + " " + ev.When2;
+            var pill = new Rectangle(x, y, TextRenderer.MeasureText(g, when, small, new Size(9999, 9999), TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding).Width + pad * 2, pillH);
+            using (var b = new SolidBrush(ev.When1 == "Now" ? Green : Red))
+            using (var p = Round(pill, pillH / 2)) g.FillPath(b, p);
+            TextRenderer.DrawText(g, when, small, pill, Color.White, tf | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(g, ev.Tag, font, new Rectangle(pill.Right + pad, y, r.Right - pill.Right - pad * 3, pillH), cd, tf | TextFormatFlags.VerticalCenter);
+            y += pillH + gap;
+            TextRenderer.DrawText(g, ev.Place, font, new Rectangle(x, y, w, font.Height), cd, tf);
         };
         list.MouseMove += (s, e) => { int i = list.IndexFromPoint(e.Location); if (i >= 0 && i != list.SelectedIndex) list.SelectedIndex = i; };
         list.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) OpenSelected(); };
         list.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) OpenSelected(); else if (e.KeyCode == Keys.Escape) popup.Hide(); };
 
-        popup.FormBorderStyle = FormBorderStyle.FixedToolWindow;
+        popup.FormBorderStyle = FormBorderStyle.None;
         popup.ShowInTaskbar = false;
         popup.TopMost = true;
         popup.StartPosition = FormStartPosition.Manual;
-        popup.ClientSize = new Size(pad * 58, list.ItemHeight * 8);
-        popup.Controls.Add(list);
+        popup.ClientSize = new Size(pad * 62, list.ItemHeight * 8);
+        popup.Padding = new Padding(0, 0, 0, pad);
+        popup.Controls.Add(list);   // fill control first, so the header docks above it
+        popup.Controls.Add(header);
         popup.Deactivate += (s, e) => { popup.Hide(); hiddenAt = DateTime.UtcNow; };
         popup.FormClosing += (s, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; popup.Hide(); } };
+        int round = 2;
+        DwmSetWindowAttribute(popup.Handle, 33, ref round, 4); // Windows 11: rounded corners + shadow. Fails harmlessly on Windows 10.
+        ApplyTheme();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Refresh now", null, (s, e) => Refresh());
@@ -324,6 +451,8 @@ class App : ApplicationContext
         if (busy) return;
         busy = true;
         tray.Text = "Osaka events: updating…";
+        subtitle = "Updating…";
+        header.Invalidate();
         Task.Run(() => Core.FetchAll(null)).ContinueWith(t =>
         {
             busy = false;
@@ -338,6 +467,11 @@ class App : ApplicationContext
                         .Serialize(new Cache { Fetched = fetched.ToString("o"), Events = events }));
                 }
                 catch { } // cache is only an optimisation
+                try
+                {
+                    foreach (var f in new DirectoryInfo(ThumbDir).GetFiles().Where(f => f.LastWriteTimeUtc < DateTime.UtcNow.AddDays(-30))) f.Delete();
+                }
+                catch { } // no thumbs yet, or one is in use
             }
             UpdateUi(); // on failure keep the old list; the timer retries in 30 min
         }, TaskScheduler.FromCurrentSynchronizationContext());
@@ -347,19 +481,84 @@ class App : ApplicationContext
     {
         string when = fetched == DateTime.MinValue ? "no data yet" : "updated " + fetched.ToString("ddd HH:mm", CultureInfo.InvariantCulture);
         tray.Text = "Osaka & Sakai events (" + when + ")";
-        popup.Text = "Osaka & Sakai: coming up  ·  " + when;
+        popup.Text = "Osaka & Sakai: coming up"; // for screen readers; the visible title is painted in the header
+        subtitle = "Coming up for two  ·  " + when;
+        header.Invalidate();
+        var ranked = Core.Rank(events, DateTime.Today); // re-rank each time: scores depend on today's date
         list.BeginUpdate();
         list.Items.Clear();
-        list.Items.AddRange(Core.Rank(events, DateTime.Today).ToArray()); // re-rank each time: scores depend on today's date
+        list.Items.AddRange(ranked.ToArray());
         list.EndUpdate();
+
+        // Keep only the thumbnails of listed events in memory, and load the missing ones in the background.
+        foreach (var k in thumbs.Keys.Where(k => !ranked.Any(e => e.Img == k)).ToList())
+        {
+            if (thumbs[k] != null) thumbs[k].Dispose();
+            thumbs.Remove(k);
+        }
+        var want = ranked.Select(e => e.Img).Where(u => Core.ImageOk(u) && !thumbs.ContainsKey(u)).Distinct().ToList();
+        if (loadingThumbs || want.Count == 0) return; // anything missed is picked up the next time the list opens
+        loadingThumbs = true;
+        int w = thumbW, h = thumbH;
+        Task.Run(() =>
+        {
+            foreach (var url in want)
+            {
+                Bitmap bmp = null;
+                try { bmp = Core.LoadThumb(url, ThumbDir, w, h); } catch { }
+                popup.BeginInvoke((Action)(() => { thumbs[url] = bmp; list.Invalidate(); }));
+            }
+        }).ContinueWith(t => { loadingThumbs = false; }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    // Follows the Windows light/dark app setting; high contrast gets the system colours.
+    void ApplyTheme()
+    {
+        bool dark = false;
+        try
+        {
+            using (var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                dark = (int)k.GetValue("AppsUseLightTheme", 1) == 0;
+        }
+        catch { } // key missing on old Windows: stay light
+        if (SystemInformation.HighContrast)
+        {
+            bg = SystemColors.Window; hover = SystemColors.Highlight; fg = SystemColors.WindowText; dim = SystemColors.GrayText;
+            fgSel = dimSel = SystemColors.HighlightText;
+        }
+        else
+        {
+            bg = dark ? Color.FromArgb(32, 32, 32) : Color.FromArgb(249, 249, 249);
+            hover = dark ? Color.FromArgb(51, 51, 51) : Color.FromArgb(234, 234, 234);
+            fgSel = fg = dark ? Color.White : Color.FromArgb(26, 26, 26);
+            dimSel = dim = dark ? Color.FromArgb(170, 170, 170) : Color.FromArgb(92, 92, 92);
+        }
+        popup.BackColor = header.BackColor = list.BackColor = bg;
+        SetWindowTheme(list.Handle, dark ? "DarkMode_Explorer" : "Explorer", null); // matching scrollbar
+        int v = dark ? 1 : 0;
+        DwmSetWindowAttribute(popup.Handle, 20, ref v, 4); // matching window border
+    }
+
+    static GraphicsPath Round(Rectangle r, int rad)
+    {
+        int d = rad * 2;
+        var p = new GraphicsPath();
+        p.AddArc(r.X, r.Y, d, d, 180, 90);
+        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
     }
 
     void Toggle()
     {
         if (popup.Visible) { popup.Hide(); return; }
         if ((DateTime.UtcNow - hiddenAt).TotalMilliseconds < 300) return; // the tray click itself just closed it
+        ApplyTheme();
         UpdateUi();
         var wa = Screen.FromPoint(Cursor.Position).WorkingArea;
+        popup.Height = wa.Height - 16; // almost the full screen height
         popup.Location = new Point(wa.Right - popup.Width - 8, wa.Bottom - popup.Height - 8);
         popup.Show();
         popup.Activate();
@@ -386,6 +585,8 @@ class App : ApplicationContext
     }
 
     [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr hwnd, string app, string idList);
 
     [STAThread]
     static int Main(string[] args)
